@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import logging
 import asyncio
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Thiết lập logging
 logging.basicConfig(level=logging.INFO)
@@ -94,7 +95,15 @@ sio_asgi_app = socketio.ASGIApp(sio, other_asgi_app=http_app)
 
 # Ứng dụng chính là sio_asgi_app
 app = sio_asgi_app
+class LogMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        logger.info(f"Request: {request.method} {request.url} Headers: {request.headers}")
+        response = await call_next(request)
+        logger.info(f"Response: {response.status_code}")
+        return response
 
+# Thêm middleware vào http_app
+http_app.add_middleware(LogMiddleware)
 # Thêm middleware CORSMiddleware vào http_app
 http_app.add_middleware(
     CORSMiddleware,
