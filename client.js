@@ -6,9 +6,9 @@ const socket = io("http://telegram.seedlabs.digital:8000", {
   reconnectionAttempts: 5,
   reconnectionDelay: 1000,
 });
+
 socket.on("connect", () => {
   console.log("Connected to server");
-  // Gửi event getMessage khi kết nối
   socket.emit("getMessage", { channel: "hehe478", time_interval_minutes: 60 });
 });
 

@@ -1,16 +1,12 @@
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from telethon import TelegramClient, events
 from datetime import datetime, timezone, timedelta
-import socketio
-from starlette.applications import Starlette
-from starlette.routing import Route, WebSocketRoute
-from starlette.responses import JSONResponse
-import uvicorn
-import os
-from dotenv import load_dotenv
 import logging
 import asyncio
-from starlette.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
+import os
+from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
 
 # Thiết lập logging ở mức DEBUG để có thêm chi tiết
 logging.basicConfig(level=logging.DEBUG)
@@ -25,46 +21,24 @@ phone = os.getenv("PHONE_NUMBER")
 # Khởi tạo TelegramClient
 client = TelegramClient('telegram', api_id, api_hash)
 
-# Tạo Socket.IO server với CORS cho phép tất cả origins
-sio = socketio.AsyncServer(
-    async_mode='asgi',
-    cors_allowed_origins="*",  # Cho phép tất cả origins
-    logger=True,
-    engineio_logger=True
+# Khởi tạo FastAPI app
+app = FastAPI()
+
+# Thêm middleware CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Middleware ghi log chi tiết
-class LogMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        logger.debug(f"Request: {request.method} {request.url} Headers: {request.headers}")
-        response = await call_next(request)
-        logger.debug(f"Response: {response.status_code}")
-        return response
-
-# Hàm xử lý API HTTP GET để lấy tin nhắn
-async def get_message(request):
-    channel = request.query_params.get('channel')
-    if not channel:
-        return JSONResponse({"error": "Channel is required"}, status_code=400)
-    time_interval_minutes = int(request.query_params.get('time_interval_minutes', 10))
-    time_threshold = datetime.now(timezone.utc) - timedelta(minutes=time_interval_minutes)
-
-    old_messages = []
-    if not client.is_connected():
-        await client.connect()
-    async for message in client.iter_messages(channel):
-        if message.date >= time_threshold:
-            if not message.media:
-                old_messages.append({
-                    'text': message.text,
-                    'date': message.date.isoformat(),
-                })
-        else:
-            break
-    return JSONResponse(content=old_messages, headers={"Content-Disposition": "attachment"})
+# Danh sách client WebSocket theo channel
+connected_clients = {}
 
 # Hàm khởi động ứng dụng
-async def startup():
+@app.on_event("startup")
+async def startup_event():
     try:
         logger.info("Bắt đầu kết nối TelegramClient...")
         if not client.is_connected():
@@ -94,59 +68,9 @@ async def startup():
         logger.error(f"Lỗi khi khởi động TelegramClient: {str(e)}")
         raise
 
-# Định nghĩa WebSocket endpoint đơn giản để kiểm tra
-async def websocket_endpoint(websocket):
-    await websocket.accept()
-    await websocket.send_text("Hello, WebSocket!")
-    await websocket.close()
-
-# Tạo ứng dụng Starlette
-app = Starlette(
-    routes=[
-        Route("/api/get-messages", get_message, methods=["GET"]),
-        WebSocketRoute("/ws", websocket_endpoint),  # Endpoint kiểm tra WebSocket
-        WebSocketRoute("/socket.io/", sio.handle_request)
-    ],
-    on_startup=[startup]
-)
-
-# Thêm middleware
-app.add_middleware(LogMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
-
-# Gắn Socket.IO vào ứng dụng
-sio_app = socketio.ASGIApp(sio, app)
-
-# Danh sách client đã kết nối
-connected_clients = {}
-
-# Xử lý tin nhắn mới từ Telegram
-@client.on(events.NewMessage())
-async def handler(event):
-    channel = event.chat.username
-    if channel in connected_clients:
-        for sid in connected_clients[channel]:
-            await sio.emit('newMessage', {
-                'text': event.message.text,
-                'date': event.message.date.isoformat(),
-            }, room=sid)
-
-# Sự kiện Socket.IO
-@sio.event
-async def connect(sid, environ):
-    logger.info(f"Client {sid} connected")
-    await sio.emit('connection', {'status': 'connected'}, room=sid)
-
-@sio.event
-async def getMessage(sid, data):
-    channel = data.get('channel')
-    time_interval_minutes = data.get('time_interval_minutes', 10)
+# API HTTP GET để lấy tin nhắn
+@app.get("/api/get-messages")
+async def get_message(channel: str = Query(...), time_interval_minutes: int = Query(10)):
     time_threshold = datetime.now(timezone.utc) - timedelta(minutes=time_interval_minutes)
 
     old_messages = []
@@ -158,24 +82,54 @@ async def getMessage(sid, data):
                 old_messages.append({
                     'text': message.text,
                     'date': message.date.isoformat(),
-                    'from': message.from_id,
                 })
         else:
             break
-    await sio.emit('oldMessages', old_messages, room=sid)
+    return JSONResponse(content=old_messages, headers={"Content-Disposition": "attachment"})
 
+# WebSocket endpoint cho các client
+@app.websocket("/ws/{channel}")
+async def websocket_endpoint(websocket: WebSocket, channel: str):
+    await websocket.accept()
     if channel not in connected_clients:
         connected_clients[channel] = []
-    connected_clients[channel].append(sid)
+    connected_clients[channel].append(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Xử lý dữ liệu từ client nếu cần
+            if data == "getMessages":
+                time_interval_minutes = 10  # Mặc định
+                time_threshold = datetime.now(timezone.utc) - timedelta(minutes=time_interval_minutes)
+                old_messages = []
+                async for message in client.iter_messages(channel):
+                    if message.date >= time_threshold:
+                        if not message.media:
+                            old_messages.append({
+                                'text': message.text,
+                                'date': message.date.isoformat(),
+                                'from': message.from_id,
+                            })
+                    else:
+                        break
+                await websocket.send_json({'oldMessages': old_messages})
+    except WebSocketDisconnect:
+        connected_clients[channel].remove(websocket)
+        if not connected_clients[channel]:
+            del connected_clients[channel]
+        logger.info(f"Client disconnected from channel {channel}")
 
-@sio.event
-async def disconnect(sid):
-    for channel in list(connected_clients.keys()):
-        if sid in connected_clients[channel]:
-            connected_clients[channel].remove(sid)
-            if not connected_clients[channel]:
-                del connected_clients[channel]
-    logger.info(f"Client {sid} disconnected")
+# Xử lý tin nhắn mới từ Telegram
+@client.on(events.NewMessage())
+async def handler(event):
+    channel = event.chat.username
+    if channel in connected_clients:
+        for ws in connected_clients[channel]:
+            await ws.send_json({
+                'text': event.message.text,
+                'date': event.message.date.isoformat(),
+            })
 
 if __name__ == '__main__':
-    uvicorn.run(sio_app, host='0.0.0.0', port=8000)
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=8000)
