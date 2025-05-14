@@ -28,8 +28,7 @@ client = TelegramClient('telegram', api_id, api_hash)
 sio = socketio.AsyncServer(
     async_mode='asgi',
     cors_allowed_origins="*",
-    ping_timeout=60,
-    ping_interval=25,
+    allow_credentials=False,   # Tắt yêu cầu credentials
     logger=True,  # Bật log chi tiết cho Socket.IO
     engineio_logger=True  # Bật log cho engine.io
 )

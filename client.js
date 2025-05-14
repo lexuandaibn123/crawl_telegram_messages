@@ -1,9 +1,11 @@
 const io = require("socket.io-client");
 const socket = io("https://telegram.seedlabs.digital", {
   transports: ["websocket"],
-  path: "/socket.io",
+  path: "/socket.io/",
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
 });
-
 socket.on("connect", () => {
   console.log("Connected to server");
   // Gửi event getMessage khi kết nối
