@@ -1,29 +1,42 @@
-const io = require("socket.io-client");
-const socket = io("http://telegram.seedlabs.digital:8000", {
-  transports: ["websocket"],
-  path: "/socket.io/",
-  reconnection: true,
-  reconnectionAttempts: 5,
-  reconnectionDelay: 1000,
-});
+const WebSocket = require("ws"); // Import thư viện ws
+const channel = "gem_tools_calls"; // Channel cố định, thay đổi nếu cần
 
-socket.on("connect", () => {
-  console.log("Connected to server");
-  socket.emit("getMessage", { channel: "hehe478", time_interval_minutes: 60 });
-});
+function connectWebSocket() {
+  const ws = new WebSocket(`wss://telegram.seedlabs.digital/ws/${channel}`);
 
-socket.on("oldMessages", (data) => {
-  console.log("Old message:", data);
-});
+  ws.on("open", () => {
+    console.log("Connected to server");
+    ws.send("getMessages"); // Gửi yêu cầu lấy tin nhắn cũ
+  });
 
-socket.on("newMessage", (data) => {
-  console.log("New message:", data);
-});
+  ws.on("message", (data) => {
+    try {
+      // Dữ liệu nhận được từ ws là Buffer, cần chuyển thành string và parse JSON
+      const parsedData = JSON.parse(data.toString());
+      if (parsedData.oldMessages) {
+        console.log("Old messages:", parsedData.oldMessages);
+      } else if (parsedData.text && parsedData.date) {
+        console.log("New message:", parsedData.text, parsedData.date);
+      } else {
+        console.log("Unknown message format:", parsedData);
+      }
+    } catch (error) {
+      console.error("Error parsing message:", error);
+    }
+  });
 
-socket.on("disconnect", () => {
-  console.log("Disconnected from server");
-});
+  ws.on("close", () => {
+    console.log("Disconnected from server. Reconnecting in 5 seconds...");
+    setTimeout(connectWebSocket, 5000); // Thử lại sau 5 giây
+  });
 
-socket.on("connect_error", (error) => {
-  console.log("Connection error:", error);
-});
+  ws.on("error", (error) => {
+    console.log("Connection error:", error.message);
+    ws.close(); // Đóng kết nối để kích hoạt sự kiện close
+  });
+
+  return ws;
+}
+
+// Khởi tạo kết nối
+let ws = connectWebSocket();
