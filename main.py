@@ -42,7 +42,7 @@ async def get_message(request):
                 })
         else:
             break
-    return JSONResponse(old_messages)
+    return JSONResponse(content=old_messages, headers={"Content-Disposition": "attachment"})
 
 async def startup():
     try:
