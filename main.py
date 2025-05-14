@@ -66,7 +66,7 @@ async def startup():
                 code_callback=input_code,
                 password=input_password
             ),
-            timeout=60
+            timeout=60 * 30  # Thời gian chờ tối đa là 30 phút
         )
         logger.info("Đăng nhập Telegram thành công!")
     except asyncio.TimeoutError:
