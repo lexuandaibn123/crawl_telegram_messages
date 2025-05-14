@@ -2,7 +2,7 @@ from telethon import TelegramClient, events
 from datetime import datetime, timezone, timedelta
 import socketio
 from starlette.applications import Starlette
-from starlette.routing import Route, Mount
+from starlette.routing import Route
 from starlette.responses import JSONResponse
 import uvicorn
 import os
@@ -61,7 +61,6 @@ async def startup():
         if not client.is_connected():
             await client.connect()
 
-        # Hàm callback để nhập OTP hoặc mật khẩu
         async def input_code():
             logger.info("Vui lòng nhập mã OTP được gửi đến số điện thoại %s:", phone)
             return input("Mã OTP: ")
@@ -70,14 +69,13 @@ async def startup():
             logger.info("Vui lòng nhập mật khẩu xác minh hai bước:")
             return input("Mật khẩu: ")
 
-        # Đăng nhập với callback cho OTP và mật khẩu
         await asyncio.wait_for(
             client.start(
                 phone=phone,
                 code_callback=input_code,
                 password=input_password
             ),
-            timeout=60 * 30  # Thời gian chờ tối đa là 30 phút
+            timeout=60 * 30
         )
         logger.info("Đăng nhập Telegram thành công!")
     except asyncio.TimeoutError:
@@ -88,16 +86,16 @@ async def startup():
         raise
 
 # Định nghĩa routes cho ứng dụng Starlette
-routes = [
-    Route("/api/get-messages", get_message, methods=["GET"]),
-    Mount('/ws', socketio.ASGIApp(sio))  # Gắn Socket.IO ASGI app tại /ws
-]
+http_app = Starlette(routes=[Route("/api/get-messages", get_message, methods=["GET"])], on_startup=[startup])
 
-# Tạo ứng dụng Starlette
-app = Starlette(routes=routes, on_startup=[startup])
+# Tạo Socket.IO ASGI app với http_app làm ứng dụng dự phòng
+sio_asgi_app = socketio.ASGIApp(sio, other_asgi_app=http_app)
 
-# Thêm middleware CORSMiddleware
-app.add_middleware(
+# Ứng dụng chính là sio_asgi_app
+app = sio_asgi_app
+
+# Thêm middleware CORSMiddleware vào http_app
+http_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
@@ -119,18 +117,17 @@ async def handler(event):
                 'date': event.message.date.isoformat(),
             }, room=sid)
 
-# Sự kiện Socket.IO: Khi client kết nối
+# Sự kiện Socket.IO
 @sio.event
 async def connect(sid, environ):
     logger.info(f"Client {sid} connected")
-    await sio.emit('connection', {'status': 'connected'}, room=sid)  # Thông báo kết nối thành công
+    await sio.emit('connection', {'status': 'connected'}, room=sid)
 
-# Sự kiện Socket.IO: Lấy tin nhắn cũ
 @sio.event
 async def getMessage(sid, data):
     channel = data.get('channel')
     time_interval_minutes = data.get('time_interval_minutes', 10)
-    time_threshold = datetime.now(timezone.utc) - timedelta(minutes=time_interval_minutes)
+    time_threshold = datetime.now(timezone.utc) - timedelta(minutes=time_interval_seconds)
 
     old_messages = []
     if not client.is_connected():
@@ -145,23 +142,20 @@ async def getMessage(sid, data):
                 })
         else:
             break
-
     await sio.emit('oldMessages', old_messages, room=sid)
 
     if channel not in connected_clients:
         connected_clients[channel] = []
     connected_clients[channel].append(sid)
 
-# Sự kiện Socket.IO: Khi client ngắt kết nối
 @sio.event
 async def disconnect(sid):
     for channel in list(connected_clients.keys()):
         if sid in connected_clients[channel]:
             connected_clients[channel].remove(sid)
-            if not connected_clients[channel]:  # Xóa channel nếu không còn client nào
+            if not connected_clients[channel]:
                 del connected_clients[channel]
     logger.info(f"Client {sid} disconnected")
 
-# Chạy ứng dụng
 if __name__ == '__main__':
     uvicorn.run(app, host='0.0.0.0', port=8000)
