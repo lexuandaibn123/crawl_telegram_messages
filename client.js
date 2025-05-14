@@ -1,10 +1,11 @@
 const io = require("socket.io-client");
-const socket = io("http://localhost:8000");
-
+const socket = io("https://telegram.seedlabs.digital/ws", {
+  transports: ["websocket"],
+});
 socket.on("connect", () => {
   console.log("Connected to server");
   // Gửi event getMessage khi kết nối
-  socket.emit("getMessage", { channel: "hehe478", time_interval_minutes: 60});
+  socket.emit("getMessage", { channel: "hehe478", time_interval_minutes: 60 });
 });
 
 socket.on("oldMessages", (data) => {

@@ -21,7 +21,7 @@ phone = os.getenv("PHONE_NUMBER")
 
 client = TelegramClient('telegram', api_id, api_hash)
 
-sio = socketio.AsyncServer(async_mode='asgi')
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 
 async def get_message(request):
     channel = request.query_params.get('channel')
