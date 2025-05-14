@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 import logging
 import asyncio
 
+from starlette.middleware.cors import CORSMiddleware
+
+
 # Thiết lập logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -81,6 +84,13 @@ routes = [
 ]
 
 app = Starlette(routes=routes, on_startup=[startup])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Cho phép tất cả hoặc chỉ các domain cần thiết
+    allow_credentials=True,
+    allow_methods=["*"],  # Cho phép tất cả các phương thức
+    allow_headers=["*"],  # Cho phép tất cả các headers
+)
 app.mount("/ws", socketio.ASGIApp(sio))
 
 connected_clients = {}
