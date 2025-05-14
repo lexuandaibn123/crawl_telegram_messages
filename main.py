@@ -81,7 +81,7 @@ routes = [
 ]
 
 app = Starlette(routes=routes, on_startup=[startup])
-app.mount("/", socketio.ASGIApp(sio))
+app.mount("/ws", socketio.ASGIApp(sio))
 
 connected_clients = {}
 
