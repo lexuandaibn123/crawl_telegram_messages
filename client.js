@@ -1,5 +1,5 @@
 const io = require("socket.io-client");
-const socket = io("https://telegram.seedlabs.digital", {
+const socket = io("http://telegram.seedlabs.digital:8000", {
   transports: ["websocket"],
   path: "/socket.io/",
   reconnection: true,

@@ -12,8 +12,8 @@ import asyncio
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# Thiết lập logging
-logging.basicConfig(level=logging.INFO)
+# Thiết lập logging ở mức DEBUG để có thêm chi tiết
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Tải biến môi trường
@@ -25,20 +25,20 @@ phone = os.getenv("PHONE_NUMBER")
 # Khởi tạo TelegramClient
 client = TelegramClient('telegram', api_id, api_hash)
 
-# Tạo Socket.IO server
+# Tạo Socket.IO server với CORS cho phép tất cả origins
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins=None,
-    logger=True,  # Bật log chi tiết cho Socket.IO
-    engineio_logger=True  # Bật log cho engine.io
+    cors_allowed_origins="*",  # Cho phép tất cả origins
+    logger=True,
+    engineio_logger=True
 )
 
-# Middleware ghi log
+# Middleware ghi log chi tiết
 class LogMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        logger.info(f"Request: {request.method} {request.url} Headers: {request.headers}")
+        logger.debug(f"Request: {request.method} {request.url} Headers: {request.headers}")
         response = await call_next(request)
-        logger.info(f"Response: {response.status_code}")
+        logger.debug(f"Response: {response.status_code}")
         return response
 
 # Hàm xử lý API HTTP GET để lấy tin nhắn
@@ -94,16 +94,23 @@ async def startup():
         logger.error(f"Lỗi khi khởi động TelegramClient: {str(e)}")
         raise
 
-# Tạo ứng dụng Starlette với các route HTTP và WebSocket
+# Định nghĩa WebSocket endpoint đơn giản để kiểm tra
+async def websocket_endpoint(websocket):
+    await websocket.accept()
+    await websocket.send_text("Hello, WebSocket!")
+    await websocket.close()
+
+# Tạo ứng dụng Starlette
 app = Starlette(
     routes=[
         Route("/api/get-messages", get_message, methods=["GET"]),
+        WebSocketRoute("/ws", websocket_endpoint),  # Endpoint kiểm tra WebSocket
         WebSocketRoute("/socket.io/", sio.handle_request)
     ],
     on_startup=[startup]
 )
 
-# Thêm middleware vào app
+# Thêm middleware
 app.add_middleware(LogMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -116,7 +123,7 @@ app.add_middleware(
 # Gắn Socket.IO vào ứng dụng
 sio_app = socketio.ASGIApp(sio, app)
 
-# Danh sách các client đã kết nối
+# Danh sách client đã kết nối
 connected_clients = {}
 
 # Xử lý tin nhắn mới từ Telegram
@@ -134,7 +141,7 @@ async def handler(event):
 @sio.event
 async def connect(sid, environ):
     logger.info(f"Client {sid} connected")
-    # await sio.emit('connection', {'status': 'connected'}, room=sid)
+    await sio.emit('connection', {'status': 'connected'}, room=sid)
 
 @sio.event
 async def getMessage(sid, data):
