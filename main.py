@@ -28,7 +28,7 @@ client = TelegramClient('telegram', api_id, api_hash)
 # Tạo Socket.IO server
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins='*',
+    cors_allowed_origins=None,
     logger=True,  # Bật log chi tiết cho Socket.IO
     engineio_logger=True  # Bật log cho engine.io
 )
@@ -134,7 +134,7 @@ async def handler(event):
 @sio.event
 async def connect(sid, environ):
     logger.info(f"Client {sid} connected")
-    await sio.emit('connection', {'status': 'connected'}, room=sid)
+    # await sio.emit('connection', {'status': 'connected'}, room=sid)
 
 @sio.event
 async def getMessage(sid, data):
