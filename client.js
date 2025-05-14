@@ -23,3 +23,7 @@ socket.on("newMessage", (data) => {
 socket.on("disconnect", () => {
   console.log("Disconnected from server");
 });
+
+socket.on("connect_error", (error) => {
+  console.log("Connection error:", error);
+});

@@ -2,7 +2,7 @@ from telethon import TelegramClient, events
 from datetime import datetime, timezone, timedelta
 import socketio
 from starlette.applications import Starlette
-from starlette.routing import Route
+from starlette.routing import Route, WebSocketRoute
 from starlette.responses import JSONResponse
 import uvicorn
 import os
@@ -25,14 +25,21 @@ phone = os.getenv("PHONE_NUMBER")
 # Khởi tạo TelegramClient
 client = TelegramClient('telegram', api_id, api_hash)
 
-# Tạo Socket.IO ASGI server
+# Tạo Socket.IO server
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins="*",
-    allow_credentials=False,   # Tắt yêu cầu credentials
+    cors_allowed_origins='*',
     logger=True,  # Bật log chi tiết cho Socket.IO
     engineio_logger=True  # Bật log cho engine.io
 )
+
+# Middleware ghi log
+class LogMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        logger.info(f"Request: {request.method} {request.url} Headers: {request.headers}")
+        response = await call_next(request)
+        logger.info(f"Response: {response.status_code}")
+        return response
 
 # Hàm xử lý API HTTP GET để lấy tin nhắn
 async def get_message(request):
@@ -87,31 +94,27 @@ async def startup():
         logger.error(f"Lỗi khi khởi động TelegramClient: {str(e)}")
         raise
 
-# Định nghĩa routes cho ứng dụng Starlette
-http_app = Starlette(routes=[Route("/api/get-messages", get_message, methods=["GET"])], on_startup=[startup])
+# Tạo ứng dụng Starlette với các route HTTP và WebSocket
+app = Starlette(
+    routes=[
+        Route("/api/get-messages", get_message, methods=["GET"]),
+        WebSocketRoute("/socket.io/", sio.handle_request)
+    ],
+    on_startup=[startup]
+)
 
-# Tạo Socket.IO ASGI app với http_app làm ứng dụng dự phòng
-sio_asgi_app = socketio.ASGIApp(sio, other_asgi_app=http_app)
-
-# Ứng dụng chính là sio_asgi_app
-app = sio_asgi_app
-class LogMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        logger.info(f"Request: {request.method} {request.url} Headers: {request.headers}")
-        response = await call_next(request)
-        logger.info(f"Response: {response.status_code}")
-        return response
-
-# Thêm middleware vào http_app
-http_app.add_middleware(LogMiddleware)
-# Thêm middleware CORSMiddleware vào http_app
-http_app.add_middleware(
+# Thêm middleware vào app
+app.add_middleware(LogMiddleware)
+app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
+
+# Gắn Socket.IO vào ứng dụng
+sio_app = socketio.ASGIApp(sio, app)
 
 # Danh sách các client đã kết nối
 connected_clients = {}
@@ -137,7 +140,7 @@ async def connect(sid, environ):
 async def getMessage(sid, data):
     channel = data.get('channel')
     time_interval_minutes = data.get('time_interval_minutes', 10)
-    time_threshold = datetime.now(timezone.utc) - timedelta(minutes=time_interval_seconds)
+    time_threshold = datetime.now(timezone.utc) - timedelta(minutes=time_interval_minutes)
 
     old_messages = []
     if not client.is_connected():
@@ -168,4 +171,4 @@ async def disconnect(sid):
     logger.info(f"Client {sid} disconnected")
 
 if __name__ == '__main__':
-    uvicorn.run(app, host='0.0.0.0', port=8000)
+    uvicorn.run(sio_app, host='0.0.0.0', port=8000)
