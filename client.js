@@ -1,7 +1,7 @@
 const io = require("socket.io-client");
 const socket = io("https://telegram.seedlabs.digital", {
   transports: ["websocket"],
-  path: "/ws/socket.io",
+  path: "/socket.io",
 });
 
 socket.on("connect", () => {

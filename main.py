@@ -29,7 +29,9 @@ sio = socketio.AsyncServer(
     async_mode='asgi',
     cors_allowed_origins="*",
     ping_timeout=60,
-    ping_interval=25
+    ping_interval=25,
+    logger=True,  # Bật log chi tiết cho Socket.IO
+    engineio_logger=True  # Bật log cho engine.io
 )
 
 # Hàm xử lý API HTTP GET để lấy tin nhắn
