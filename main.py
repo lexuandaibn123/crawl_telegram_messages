@@ -24,7 +24,13 @@ phone = os.getenv("PHONE_NUMBER")
 
 client = TelegramClient('telegram', api_id, api_hash)
 
-sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
+sio = socketio.AsyncServer(
+    async_mode='asgi', 
+    cors_allowed_origins="*", 
+    ping_timeout=60, 
+    ping_interval=25
+)
+
 
 async def get_message(request):
     channel = request.query_params.get('channel')
@@ -108,6 +114,7 @@ async def handler(event):
 @sio.event
 async def connect(sid, environ):
     logger.info(f"Client {sid} connected")
+    await sio.accept(sid)
 
 @sio.event
 async def getMessage(sid, data):
