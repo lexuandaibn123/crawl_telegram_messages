@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  crawler:
+    image: crawl_telegram_messages:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - ../.env
+    volumes:
+      - ./telegram.session:/app/telegram.session
+    ports:
+      - "8000:8000"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.crawler.rule=Host(`telegram.seedlabs.digital`)
+      - traefik.http.services.crawler.loadbalancer.server.port=8000
