@@ -2,36 +2,37 @@ from telethon import TelegramClient, events
 from datetime import datetime, timezone, timedelta
 import socketio
 from starlette.applications import Starlette
-from starlette.routing import Route
+from starlette.routing import Route, Mount
 from starlette.responses import JSONResponse
 import uvicorn
 import os
 from dotenv import load_dotenv
 import logging
 import asyncio
-
 from starlette.middleware.cors import CORSMiddleware
-
 
 # Thiết lập logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Tải biến môi trường
 load_dotenv()
 api_id = os.getenv("API_ID")
 api_hash = os.getenv("API_HASH")
 phone = os.getenv("PHONE_NUMBER")
 
+# Khởi tạo TelegramClient
 client = TelegramClient('telegram', api_id, api_hash)
 
+# Tạo Socket.IO ASGI server
 sio = socketio.AsyncServer(
-    async_mode='asgi', 
-    cors_allowed_origins="*", 
-    ping_timeout=60, 
+    async_mode='asgi',
+    cors_allowed_origins="*",
+    ping_timeout=60,
     ping_interval=25
 )
 
-
+# Hàm xử lý API HTTP GET để lấy tin nhắn
 async def get_message(request):
     channel = request.query_params.get('channel')
     if not channel:
@@ -53,6 +54,7 @@ async def get_message(request):
             break
     return JSONResponse(content=old_messages, headers={"Content-Disposition": "attachment"})
 
+# Hàm khởi động ứng dụng
 async def startup():
     try:
         logger.info("Bắt đầu kết nối TelegramClient...")
@@ -85,22 +87,28 @@ async def startup():
         logger.error(f"Lỗi khi khởi động TelegramClient: {str(e)}")
         raise
 
+# Định nghĩa routes cho ứng dụng Starlette
 routes = [
     Route("/api/get-messages", get_message, methods=["GET"]),
+    Mount('/ws', socketio.ASGIApp(sio))  # Gắn Socket.IO ASGI app tại /ws
 ]
 
+# Tạo ứng dụng Starlette
 app = Starlette(routes=routes, on_startup=[startup])
+
+# Thêm middleware CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Cho phép tất cả hoặc chỉ các domain cần thiết
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Cho phép tất cả các phương thức
-    allow_headers=["*"],  # Cho phép tất cả các headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-app.mount("/ws", socketio.ASGIApp(sio))
 
+# Danh sách các client đã kết nối
 connected_clients = {}
 
+# Xử lý tin nhắn mới từ Telegram
 @client.on(events.NewMessage())
 async def handler(event):
     channel = event.chat.username
@@ -111,15 +119,17 @@ async def handler(event):
                 'date': event.message.date.isoformat(),
             }, room=sid)
 
+# Sự kiện Socket.IO: Khi client kết nối
 @sio.event
 async def connect(sid, environ):
     logger.info(f"Client {sid} connected")
-    await sio.accept(sid)
+    await sio.emit('connection', {'status': 'connected'}, room=sid)  # Thông báo kết nối thành công
 
+# Sự kiện Socket.IO: Lấy tin nhắn cũ
 @sio.event
 async def getMessage(sid, data):
-    channel = data['channel']
-    time_interval_minutes = data['time_interval_minutes']
+    channel = data.get('channel')
+    time_interval_minutes = data.get('time_interval_minutes', 10)
     time_threshold = datetime.now(timezone.utc) - timedelta(minutes=time_interval_minutes)
 
     old_messages = []
@@ -142,12 +152,16 @@ async def getMessage(sid, data):
         connected_clients[channel] = []
     connected_clients[channel].append(sid)
 
+# Sự kiện Socket.IO: Khi client ngắt kết nối
 @sio.event
 async def disconnect(sid):
-    for channel in connected_clients:
+    for channel in list(connected_clients.keys()):
         if sid in connected_clients[channel]:
             connected_clients[channel].remove(sid)
+            if not connected_clients[channel]:  # Xóa channel nếu không còn client nào
+                del connected_clients[channel]
     logger.info(f"Client {sid} disconnected")
 
+# Chạy ứng dụng
 if __name__ == '__main__':
     uvicorn.run(app, host='0.0.0.0', port=8000)

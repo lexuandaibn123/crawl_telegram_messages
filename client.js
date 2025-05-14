@@ -3,6 +3,7 @@ const socket = io("https://telegram.seedlabs.digital", {
   transports: ["websocket"],
   path: "/ws/socket.io",
 });
+
 socket.on("connect", () => {
   console.log("Connected to server");
   // Gửi event getMessage khi kết nối
