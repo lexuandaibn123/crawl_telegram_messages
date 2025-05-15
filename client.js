@@ -3,6 +3,7 @@ const channel = "gem_tools_calls"; // Channel cố định, thay đổi nếu c�
 
 function connectWebSocket() {
   const ws = new WebSocket(`wss://telegram.seedlabs.digital/ws/${channel}`);
+  // const ws = new WebSocket(`ws://localhost:8000/ws/${channel}`);
 
   ws.on("open", () => {
     console.log("Connected to server");

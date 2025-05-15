@@ -7,6 +7,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 # Thiết lập logging ở mức DEBUG để có thêm chi tiết
 logging.basicConfig(level=logging.DEBUG)
@@ -23,7 +24,7 @@ client = TelegramClient('telegram', api_id, api_hash)
 
 # Khởi tạo FastAPI app
 app = FastAPI()
-
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 # Thêm middleware CORS
 app.add_middleware(
     CORSMiddleware,
