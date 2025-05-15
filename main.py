@@ -115,13 +115,52 @@ async def websocket_endpoint(websocket: WebSocket, channel: str):
 # Xử lý tin nhắn mới từ Telegram
 @client.on(events.NewMessage())
 async def handler(event):
-    channel = event.chat.username
-    if channel in connected_clients:
-        for ws in connected_clients[channel]:
-            await ws.send_json({
-                'text': event.message.text,
-                'date': event.message.date.isoformat(),
-            })
+    logger.info("-----------------------------------------------------")
+    logger.info(f"[HANDLER] New message event received!")
+    logger.info(f"[HANDLER] Chat Entity: {event.chat}")
+    logger.info(f"[HANDLER] Chat ID: {event.chat_id}")
+
+    chat_username_from_event = None
+    if hasattr(event.chat, 'username') and event.chat.username:
+        chat_username_from_event = event.chat.username
+        logger.info(f"[HANDLER] Event's chat username: '{chat_username_from_event}' (type: {type(chat_username_from_event)})")
+    else:
+        logger.warning(f"[HANDLER] Event's chat does NOT have a username. Chat title: {getattr(event.chat, 'title', 'N/A')}")
+
+    logger.info(f"[HANDLER] Current connected_clients keys: {list(connected_clients.keys())}")
+
+    # Chúng ta sẽ dùng chat_username_from_event để kiểm tra
+    # Client JavaScript của bạn kết nối với channel "gem_tools_calls"
+
+    if chat_username_from_event and chat_username_from_event in connected_clients:
+        logger.info(f"[HANDLER] Match found! Message from '{chat_username_from_event}' will be sent to {len(connected_clients[chat_username_from_event])} WebSocket client(s).")
+
+        message_content = {
+            'text': event.message.text,
+            'date': event.message.date.isoformat(),
+        }
+        logger.debug(f"[HANDLER] Message content to send: {message_content}")
+
+        # Tạo một bản sao của danh sách client để tránh lỗi nếu client ngắt kết nối trong lúc lặp
+        clients_to_send = list(connected_clients[chat_username_from_event])
+        for ws_client in clients_to_send:
+            try:
+                await ws_client.send_json(message_content)
+                logger.info(f"[HANDLER] Successfully sent message to a WebSocket client for channel '{chat_username_from_event}'.")
+            except Exception as e:
+                logger.error(f"[HANDLER] Error sending message to a WebSocket client for channel '{chat_username_from_event}': {e}")
+                # Tùy chọn: Xóa client bị lỗi khỏi danh sách nếu cần
+                if ws_client in connected_clients[chat_username_from_event]:
+                    connected_clients[chat_username_from_event].remove(ws_client)
+                    if not connected_clients[chat_username_from_event]:
+                        del connected_clients[chat_username_from_event]
+                        logger.info(f"[HANDLER] Removed empty client list and key for channel '{chat_username_from_event}'.")
+    elif not chat_username_from_event:
+        logger.warning(f"[HANDLER] No username in event. Cannot route message from chat ID {event.chat_id} based on username.")
+    else:
+        # Username có, nhưng không khớp với bất kỳ client nào đang kết nối
+        logger.warning(f"[HANDLER] Message from channel '{chat_username_from_event}', but no WebSocket clients are currently listening to this exact channel name.")
+    logger.info("-----------------------------------------------------")
 
 if __name__ == '__main__':
     import uvicorn

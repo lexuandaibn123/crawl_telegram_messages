@@ -1,5 +1,5 @@
 const WebSocket = require("ws"); // Import thư viện ws
-const channel = "onchain_meme"; // Channel cố định, thay đổi nếu cần
+const channel = "solana"; // Channel cố định, thay đổi nếu cần
 
 function connectWebSocket() {
   const ws = new WebSocket(`wss://telegram.seedlabs.digital/ws/${channel}`);
