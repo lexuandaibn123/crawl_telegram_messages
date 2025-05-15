@@ -9,23 +9,18 @@ from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-# Thiết lập logging ở mức DEBUG để có thêm chi tiết
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Tải biến môi trường
 load_dotenv()
 api_id = os.getenv("API_ID")
 api_hash = os.getenv("API_HASH")
 phone = os.getenv("PHONE_NUMBER")
 
-# Khởi tạo TelegramClient
 client = TelegramClient('telegram', api_id, api_hash)
 
-# Khởi tạo FastAPI app
 app = FastAPI()
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
-# Thêm middleware CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,10 +29,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Danh sách client WebSocket theo channel
 connected_clients = {}
 
-# Hàm khởi động ứng dụng
 @app.on_event("startup")
 async def startup_event():
     try:
@@ -69,7 +62,6 @@ async def startup_event():
         logger.error(f"Lỗi khi khởi động TelegramClient: {str(e)}")
         raise
 
-# API HTTP GET để lấy tin nhắn
 @app.get("/api/get-messages")
 async def get_message(channel: str = Query(...), time_interval_minutes: int = Query(10)):
     time_threshold = datetime.now(timezone.utc) - timedelta(minutes=time_interval_minutes)
@@ -86,7 +78,7 @@ async def get_message(channel: str = Query(...), time_interval_minutes: int = Qu
                 })
         else:
             break
-    return JSONResponse(content=old_messages, headers={"Content-Disposition": "attachment"})
+    return JSONResponse(content=old_messages)
 
 # WebSocket endpoint cho các client
 @app.websocket("/ws/{channel}")
